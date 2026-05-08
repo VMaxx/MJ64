@@ -1,0 +1,59 @@
+/* MJ64res.rc - resources for MJ64.exe */
+
+/* -----------------------------------------------------------------
+   Include the minimal Windows definitions that the resource compiler
+   needs.  winres.h pulls in the definitions for VERSIONINFO, etc.
+   ----------------------------------------------------------------- */
+#include "winres.h"          // <-- do NOT use <windows.h> in a .rc file!
+#include "resource.h"        // <-- our numeric IDs (optional, but nice)
+
+/* -----------------------------------------------------------------
+   1) Application icons
+   ----------------------------------------------------------------- */
+IDI_APP_ICON   ICON   "icon.ico"   // the icon that appears on the EXE itself
+IDI_TRAY_ICON  ICON   "icon16.ico"   // the same (or a different) icon for the tray
+
+/* -----------------------------------------------------------------
+   2) String table (optional - Explorer shows this as "File description")
+   ----------------------------------------------------------------- */
+STRINGTABLE 
+BEGIN
+    IDS_APP_DESC, "Mouse mover - tray icon"
+END
+
+/* -----------------------------------------------------------------
+   3) Version information block
+      - This is the exact layout the Windows version dialog expects.
+      - The language/codepage pair "040904E4" means:
+          * 0409 - US English
+          * 04E4 - Unicode (UTF-16)
+   ----------------------------------------------------------------- */
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION     1,0,0,0
+ PRODUCTVERSION  1,0,0,0
+ FILEFLAGSMASK  0x3F
+ FILEFLAGS      0x0               // no special flags (debug, prerelease, etc.)
+ FILEOS         VOS_NT_WINDOWS32  // 0x40004 - Windows NT, 32-bit (works for 64-bit too)
+ FILETYPE       VFT_APP           // 0x1 - Application
+ FILESUBTYPE    VFT2_UNKNOWN      // 0x0 - no special subtype
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "040904E4"
+		BEGIN
+			VALUE "CompanyName",       "Shane Bumpurs"
+			VALUE "LegalCopyright",    "Shane Bumpurs"
+			VALUE "FileDescription",   "Mouse mover that keeps the cursor moving while showing a tray icon"
+			VALUE "FileVersion",       "1.0.0.0"
+			VALUE "InternalName",      "MJ64"
+			VALUE "OriginalFilename",  "MJ64.exe"
+			VALUE "ProductName",       "MJ64"
+			VALUE "ProductVersion",    "1.0"
+		END
+	END
+	    BLOCK "VarFileInfo"
+    BEGIN
+        // Translation: 0x0409 (English US), 1200 (Unicode)
+        VALUE "Translation", 0x0409, 1200
+    END
+END
