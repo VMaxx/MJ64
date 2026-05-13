@@ -32,6 +32,9 @@
         extern  ExitProcess
         extern  SetThreadExecutionState
         extern  SendInput               
+		extern  CreateMutexW
+		extern  MessageBoxW
+		
 
 ;---------------------------------------------------------------------
 ;  Constants
@@ -54,11 +57,11 @@
 %define WS_OVERLAPPEDWINDOW 0x00CF0000   ; hidden window – no WS_VISIBLE
 %define SW_HIDE            0
 
-%define NOTIFYICONDATA_SIZE 956          ; current size of NOTIFYICONDATAW on x64
+%define NOTIFYICONDATA_SIZE 292          ; current size of NOTIFYICONDATAW on x64
 
 %define IDC_ARROW          32512        ; MAKEINTRESOURCE(IDC_ARROW)
 %define IDI_APPLICATION    32512        ; MAKEINTRESOURCE(IDI_APPLICATION)
-%define IDI_TRAY_ICON        101       ; our own icon resource (if any)
+%define IDI_TRAY_ICON        102       ; our own icon resource (if any)
 
 %define ES_CONTINUOUS        0x80000000
 %define ES_DISPLAY_REQUIRED 0x00000002
@@ -74,6 +77,10 @@
 section .data
     classNameW  dw 'T','r','a','y','I','c','o','n','C','l','a','s','s',0
     tipTextW    dw 'M','o','u','s','e',' ','m','o','v','e','r',0
+	mutexName   dw 'M','u','t','e','x','M','J','6','4', 0
+    msgTitle    dw 'I','n','s','t','a','n','c','e',' ','R','u','n','n','i','n','g', 0
+    msgText     dw 'A','n','o','t','h','e','r',' ','i','n','s','t','a','n','c','e',' ','i','s',' ','r','u','n','n','i','n','g','!', 0
+
 
 ;---------------------------------------------------------------------
 ;  BSS – runtime data
@@ -85,7 +92,8 @@ section .bss
     hInst           resq 1
     hWnd            resq 1
     iconHandle      resq 1
-    msg             resb 64
+    msg             resb 96
+    hMutex          resq 1
 
     ; -----------------------------------------------------------------
     ;  INPUT structure used by SendInput (single entry, 40 bytes)
@@ -118,9 +126,9 @@ WinProc:
     lea     rdx, [send_input]       ; LPINPUT pInputs
     mov     r8d, INPUT_SIZE         ; cbSize = sizeof(INPUT)
 
-    sub     rsp, 28h                ; shadow space + alignment
+    sub     rsp, 32                ; shadow space + alignment
     call    SendInput
-    add     rsp, 28h
+    add     rsp, 32
 
     xor     eax, eax                ; LRESULT = 0
     ret
@@ -139,20 +147,23 @@ WinProc:
     ; ---------------------------------------------------------------
     mov     ecx, NIM_DELETE
     lea     rdx, [notifydata]
-    sub     rsp, 28h
+    sub     rsp, 32
     call    Shell_NotifyIconW
-    add     rsp, 28h
+    add     rsp, 32
 
     xor     ecx, ecx                ; ExitCode = 0
+    sub     rsp, 32				   
     call    PostQuitMessage
-
+    add     rsp, 32
     xor     eax, eax                ; LRESULT = 0
     ret
 
 .handle_destroy:
     ; Window is being destroyed ? quit
     xor     ecx, ecx
+    sub     rsp, 32				   
     call    PostQuitMessage
+	add     rsp, 32			   
     xor     eax, eax
     ret
 
@@ -161,19 +172,35 @@ WinProc:
 ;---------------------------------------------------------------------
 global  start
 start:
+	sub rsp, 40             ; Shadow space
+
+    ; CreateMutexW(lpMutexAttributes, bInitialOwner, lpName)
+    xor rcx, rcx            ; lpMutexAttributes (NULL)
+    xor rdx, rdx            ; bInitialOwner (FALSE)
+    lea     r8,  [mutexName]           ; lpName = L"Global\..."
+
+    call    CreateMutexW                  ; Returns handle in rax
+    mov     [hMutex], rax
+    sub     rsp, 32
+	call GetLastError
+    add     rsp, 32				   
+    cmp  eax, 183            ; ERROR_ALREADY_EXISTS
+    jz already_running
     ; ---------------------------------------------------------------
     ;  Prevent Windows from sleeping while we run
     ; ---------------------------------------------------------------
     mov     ecx, ES_CONTINUOUS | ES_DISPLAY_REQUIRED
+    sub     rsp, 32
     call    SetThreadExecutionState          ; returns previous state in RAX
+    add     rsp, 32				   
 
     ; ---------------------------------------------------------------
     ;  1) Get a real HINSTANCE for this module
     ; ---------------------------------------------------------------
-    sub     rsp, 28h
     xor     rcx, rcx                ; GetModuleHandleW(NULL)
+    sub     rsp, 32
     call    GetModuleHandleW
-    add     rsp, 28h
+    add     rsp, 32
     mov     [hInst], rax
 
     ; ---------------------------------------------------------------
@@ -181,7 +208,7 @@ start:
     ; ---------------------------------------------------------------
     lea     rdi, [wndclass]
     xor     eax, eax
-    mov     ecx, 80/8
+    mov     ecx, 10
     rep     stosq
 
     ; Fill the fields we actually need
@@ -197,39 +224,41 @@ start:
     ;  3) Load default icon (IDI_TRAY_ICON) and cursor (IDC_ARROW)
     ; ---------------------------------------------------------------
     ; LoadIconW
-    sub     rsp, 28h
+
     mov     rcx, [hInst]               ; hInstance = our module (or NULL)
     mov     edx, IDI_TRAY_ICON
+    sub     rsp, 32				   
     call    LoadIconW
-    add     rsp, 28h
+    add     rsp, 32
     mov     [iconHandle], rax
     mov     [wndclass+32], rax        ; hIcon
 
     ; LoadCursorW
-    sub     rsp, 28h
     xor     rcx, rcx
     mov     edx, IDC_ARROW
+	sub     rsp, 32
     call    LoadCursorW
-    add     rsp, 28h
+    add     rsp, 32
     mov     [wndclass+40], rax        ; hCursor
 
     ; ---------------------------------------------------------------
     ;  4) Register the window class
     ; ---------------------------------------------------------------
     lea     rcx, [wndclass]
-    sub     rsp, 28h
+    sub     rsp, 32
     call    RegisterClassExW
-    add     rsp, 28h
+    add     rsp, 32
 
     ; ---------------------------------------------------------------
     ;  5) Create a hidden top-level window (no WS_VISIBLE)
     ; ---------------------------------------------------------------
-    sub     rsp, 28h
+
     xor     rcx, rcx                 ; dwExStyle = 0
     lea     rdx, [classNameW]        ; lpClassName (wide)
     xor     r8, r8                   ; lpWindowName = NULL
     mov     r9d, WS_OVERLAPPEDWINDOW ; dwStyle (no WS_VISIBLE)
-
+    
+	sub     rsp, 60h
     ; Stack arguments 5-8 (after the 32-byte shadow area)
     mov     qword [rsp+20h], 0       ; X
     mov     qword [rsp+28h], 0       ; Y
@@ -241,7 +270,7 @@ start:
     mov     qword [rsp+50h], rax     ; hInstance
     mov     qword [rsp+58h], 0       ; lpParam = NULL
     call    CreateWindowExW
-    add     rsp, 28h
+    add     rsp, 60h
 
     mov     [hWnd], rax               ; keep the window handle
 
@@ -273,9 +302,9 @@ start:
     ; ---------------------------------------------------------------
     mov     ecx, NIM_ADD
     lea     rdx, [notifydata]
-    sub     rsp, 28h
+    sub     rsp, 32
     call    Shell_NotifyIconW
-    add     rsp, 28h
+    add     rsp, 32
 
     ; ---------------------------------------------------------------
     ;  8) Initialise the SENDINPUT buffer (one INPUT record)
@@ -303,9 +332,9 @@ start:
     mov     edx, 1                     ; timer ID (any non-zero)
     mov     r8d, 1000                  ; 1000 ms interval
     xor     r9, r9                     ; lpTimerFunc = NULL ? WM_TIMER
-    sub     rsp, 28h
+    sub     rsp, 32
     call    SetTimer
-    add     rsp, 28h
+    add     rsp, 32
     ; (Result = timer ID – we don’t need it further)
 
     ; ---------------------------------------------------------------
@@ -317,21 +346,24 @@ msg_loop:
     xor     rdx, rdx                  ; hWnd = NULL (receive all messages)
     xor     r8, r8                    ; wMsgFilterMin = 0
     xor     r9, r9                    ; wMsgFilterMax = 0
+    sub     rsp, 32
     call    GetMessageW
-    add     rsp, 28h
+    add     rsp, 32
 
     test    eax, eax
     jz      .msg_loop_exit            ; WM_QUIT ? GetMessage returned 0
 
-    sub     rsp, 28h
-    lea     rcx, [msg]
-    call    TranslateMessage
-    add     rsp, 28h
 
-    sub     rsp, 28h
     lea     rcx, [msg]
+    sub     rsp, 32	
+    call    TranslateMessage
+    add     rsp, 32
+
+
+    lea     rcx, [msg]
+    sub     rsp, 32				   
     call    DispatchMessageW
-    add     rsp, 28h
+    add     rsp, 32
 
     jmp     msg_loop
 
@@ -341,18 +373,33 @@ msg_loop:
     ; ---------------------------------------------------------------
     mov     ecx, NIM_DELETE
     lea     rdx, [notifydata]
-    sub     rsp, 28h
+    sub     rsp, 32
     call    Shell_NotifyIconW
-    add     rsp, 28h
+    add     rsp, 32
 
     ; Destroy the hidden window (optional – OS will clean up anyway)
     mov     rcx, [hWnd]
-    sub     rsp, 28h
+    sub     rsp, 32
     call    DestroyWindow
-    add     rsp, 28h
+    add     rsp, 32
 
     ; ---------------------------------------------------------------
     ; 12) Exit the process
     ; ---------------------------------------------------------------
     xor     ecx, ecx                  ; exit code 0
+    sub     rsp, 32
     call    ExitProcess
+
+already_running:    
+
+    xor    rcx, rcx
+    lea    rdx, [rel msgText]
+    lea    r8, [rel msgTitle]
+    xor    r9, r9              ; MB_OK	
+    sub     rsp, 32				   
+    call   MessageBoxW
+    add     rsp, 32
+
+    xor    rcx, rcx
+    sub     rsp, 32
+    call   ExitProcess

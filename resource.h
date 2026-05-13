@@ -3,7 +3,7 @@
 #define RESOURCE_H
 
 /* Icon resources */
-#define IDI_APP_ICON   101   // the exe’s window icon (shown on the task bar)
+#define IDI_APP_ICON   1     // the exe’s window icon (shown on the task bar)
 #define IDI_TRAY_ICON  102   // the icon you want to appear in the tray
 
 /* String table */
