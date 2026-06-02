@@ -341,7 +341,7 @@ start:
     ; 10) Main message loop
     ; ---------------------------------------------------------------
 msg_loop:
-    sub     rsp, 28h
+    ;sub     rsp, 28h -- removed 6/1
     lea     rcx, [msg]                ; LPMSG
     xor     rdx, rdx                  ; hWnd = NULL (receive all messages)
     xor     r8, r8                    ; wMsgFilterMin = 0
